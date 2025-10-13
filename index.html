@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pika-Notes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    html, body {
+      margin: 0; padding: 0; height: 100%; width: 100%;
+      background-color: #1a1a1a; font-family: Consolas, 'Courier New', monospace;
+      color: #e0e0e0;
+    }
+
+    #toolbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 20px; background-color: #121212;
+      border-bottom: 1px solid #333; overflow-x: auto;
+      position: relative; flex-wrap: nowrap;
+    }
+
+    #toolbar button {
+      background-color: #333; color: #e0e0e0; border: none;
+      padding: 7px 10px; font-size: 15px; cursor: pointer;
+      border-radius: 4px; transition: background-color 0.3s ease;
+      flex-shrink: 0;
+    }
+    #toolbar button:hover { background-color: #007BFF; color: #fff; }
+
+    #feedback {
+      position: absolute; bottom: -25px; left: 20px;
+      color: #00C853; font-size: 14px; opacity: 0;
+      transition: opacity 0.6s ease;
+    }
+
+    #searchControls {
+      display: flex; align-items: center; gap: 6px;
+      margin-left: auto;
+    }
+
+    #searchInput {
+      padding: 7px 10px; font-size: 14px;
+      background-color: #1a1a1a; color: #e0e0e0;
+      border: 1px solid #333; border-radius: 4px; 
+      width: 260px;
+    }
+
+    #timer {
+      margin-left: 10px; padding: 6px 10px;
+      background-color: #333; border-radius: 4px; font-size: 14px;
+    }
+
+    #editor {
+      height: calc(100% - 120px); width: 100%;
+      box-sizing: border-box; padding: 20px;
+      font-size: 18px; line-height: 1.6;
+      overflow-y: auto; white-space: pre-wrap;
+    }
+    #editor:focus { outline: none; }
+
+    #controls {
+      height: 55px; padding: 0 25px;
+      background-color: #121212;
+      display: flex; align-items: center; justify-content: space-between;
+      border-top: 1px solid #333;
+    }
+
+    #branding { font-size: 13px; color: #bbb; }
+
+    #controlButtons {
+      display: flex; align-items: center; gap: 10px;
+    }
+
+    #controlButtons button {
+      background-color: #333; color: #e0e0e0;
+      border: none; padding: 8px 12px;
+      font-size: 14px; cursor: pointer;
+      border-radius: 4px; transition: background-color 0.3s ease;
+    }
+    #controlButtons button:hover {
+      background-color: #007BFF; color: #fff;
+    }
+
+    #toggleMode {
+      background-color: #333; font-size: 16px; padding: 8px 10px;
+    }
+
+    mark {
+      background-color: #007BFF; color: #fff;
+      padding: 0 2px; border-radius: 2px;
+    }
+
+    @media (max-width: 600px) {
+      #searchInput { width: 100%; }
+    }
+
+    body.light {
+      background-color: #f9f9f9; color: #222;
+    }
+    body.light #toolbar, body.light #controls {
+      background-color: #eaeaea; border-color: #ccc;
+    }
+    body.light #editor { color: #222; }
+    body.light #toolbar button, body.light #controlButtons button, body.light #toggleMode {
+      background-color: #ddd; color: #222;
+    }
+    body.light #toolbar button:hover, body.light #controlButtons button:hover, body.light #toggleMode:hover {
+      background-color: #007BFF; color: #fff;
+    }
+  </style>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+  <div id="toolbar">
+    <button onclick="format('bold')"><b>B</b></button>
+    <button onclick="format('italic')"><i>I</i></button>
+    <button onclick="format('underline')"><u>U</u></button>
+    <button onclick="cutText()">✂️</button>
+    <button id="copyBtn" onclick="copyNotes()">📋</button>
+    <button id="pasteBtn" onclick="pasteNotes()">📥</button>
+    <button onclick="setHeading('h1')">H1</button>
+    <button onclick="setHeading('h2')">H2</button>
+    <button onclick="setHeading('h3')">H3</button>
+    <button onclick="formatList()">•</button>
+    <button onclick="document.execCommand('undo')">↩</button>
+    <button onclick="document.execCommand('redo')">↪</button>
+
+    <div id="searchControls">
+      <button onclick="openHelp()">❓</button>
+      <button onclick="openFile()">📁</button>
+      <button onclick="triggerSearch()">🎯</button>
+      <button onclick="googleSearch()">🌐</button>
+      <input type="text" id="searchInput" placeholder="Search notes...">
+      <div id="timer">00:00:00</div>
+    </div>
+    <div id="feedback"></div>
+  </div>
+
+  <div id="editor" contenteditable="true" spellcheck="false"></div>
+
+  <div id="controls">
+    <div id="branding">⚡ Pika-Notes | Lucky Pikas Security Protocol v1.1</div>
+    <div id="controlButtons">
+      <button onclick="clearNotes()">Clear</button>
+      <button onclick="downloadNotes()">Download</button>
+      <button onclick="openDownloads()">Open Downloads</button>
+      <button id="toggleMode" onclick="toggleMode()">☀️ / 🌙</button>
+    </div>
+  </div>
+
+  <script>
+    const editor = document.getElementById('editor');
+    const feedback = document.getElementById('feedback');
+    const searchInput = document.getElementById('searchInput');
+    const timerDisplay = document.getElementById('timer');
+    let matches = [], currentMatch = -1;
+
+    // Load saved notes
+    const saved = localStorage.getItem('pika-notepad');
+    if (saved) editor.innerHTML = saved;
+
+    editor.addEventListener('input', () =>
+      localStorage.setItem('pika-notepad', editor.innerHTML)
+    );
+
+    function showFeedback(msg, color = '#00C853') {
+      feedback.textContent = msg;
+      feedback.style.color = color;
+      feedback.style.opacity = 1;
+      setTimeout(() => (feedback.style.opacity = 0), 1500);
+    }
+
+    async function copyNotes() {
+      try {
+        await navigator.clipboard.writeText(editor.innerText);
+        showFeedback('Copied!');
+      } catch {
+        showFeedback('Copy failed', '#FF3D00');
+      }
+    }
+
+    async function pasteNotes() {
+      try {
+        let text = await navigator.clipboard.readText();
+        if (!text) throw new Error('empty');
+        document.execCommand('insertText', false, text);
+        showFeedback('Pasted!');
+      } catch {
+        const manual = prompt('Paste manually below:');
+        if (manual) document.execCommand('insertText', false, manual);
+        showFeedback('Manual paste complete', '#FFB300');
+      }
+    }
+
+    async function cutText() {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const selectedText = sel.toString();
+      if (selectedText.trim() === '') {
+        showFeedback('Nothing selected', '#FFB300');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(selectedText);
+        document.execCommand('delete');
+        showFeedback('Cut!');
+      } catch {
+        showFeedback('Cut failed', '#FF3D00');
+      }
+    }
+
+    function googleSearch() {
+      let query = window.getSelection().toString().trim() || searchInput.value.trim();
+      if (!query) {
+        showFeedback('No text to search', '#FFB300');
+        return;
+      }
+      const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+      window.open(url, '_blank');
+      showFeedback('Searching Google...');
+    }
+
+    function openHelp() {
+      window.open(
+        'https://luckypikas.blogspot.com/p/pika-notes-help-huddle-up-lucky-pikas.html',
+        '_blank'
+      );
+      showFeedback('Opening Help...');
+    }
+
+    function clearNotes() {
+      editor.innerHTML = '';
+      localStorage.removeItem('pika-notepad');
+      showFeedback('Notes cleared', '#FF3D00');
+    }
+
+    function downloadNotes() {
+      const text = editor.innerText;
+      const now = new Date();
+      const timestamp = now.toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
+      const filename = `LuckyPikas_Notes_${timestamp}.txt`;
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showFeedback('Downloaded!');
+    }
+
+    function openDownloads() {
+      alert("Check your browser's Downloads folder for saved notes.");
+    }
+
+    // New 📁 open file function
+    function openFile() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.txt, .html';
+      input.onchange = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          if (file.name.endsWith('.html')) {
+            editor.innerHTML = ev.target.result;
+          } else {
+            editor.innerText = ev.target.result;
+          }
+          localStorage.setItem('pika-notepad', editor.innerHTML);
+          showFeedback(`Loaded ${file.name}`);
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    }
+
+    function format(cmd) {
+      document.execCommand(cmd, false, null);
+      editor.focus();
+    }
+
+    function setHeading(level) {
+      const currentBlock = document.queryCommandValue('formatBlock').toLowerCase();
+      document.execCommand('formatBlock', false, currentBlock === level ? 'p' : level);
+      editor.focus();
+    }
+
+    function formatList() {
+      document.execCommand('insertUnorderedList', false, null);
+      editor.focus();
+    }
+
+    function triggerSearch() {
+      const query = searchInput.value.trim();
+      if (!query) return;
+      const content = editor.innerText;
+      const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const highlighted = content.replace(regex, match => `<mark>${match}</mark>`);
+      editor.innerHTML = highlighted;
+      matches = Array.from(editor.querySelectorAll('mark'));
+      currentMatch = -1;
+      if (matches.length > 0) scrollToMatch(0);
+    }
+
+    function scrollToMatch(i) {
+      matches.forEach(m => (m.style.backgroundColor = '#007BFF'));
+      matches[i].style.backgroundColor = '#00C853';
+      matches[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function clearSearch() {
+      searchInput.value = '';
+      editor.innerHTML = editor.innerText;
+      matches = [];
+      currentMatch = -1;
+    }
+
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        triggerSearch();
+      }
+    });
+
+    function updateTimer() {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const s = String(now.getSeconds()).padStart(2, '0');
+      timerDisplay.textContent = `${h}:${m}:${s}`;
+    }
+    setInterval(updateTimer, 1000);
+
+    function toggleMode() {
+      document.body.classList.toggle('light');
+    }
+
+    window.onload = () => editor.focus();
+  </script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
